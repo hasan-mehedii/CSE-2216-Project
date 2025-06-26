@@ -37,11 +37,11 @@ async def signup(user: User):
     existing_user = await collection.find_one({"email": user.email})
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
-    
+
     hashed_pwd = hash_password(user.password)
     user_dict = user.dict()
     user_dict["password"] = hashed_pwd
-    
+
     await collection.insert_one(user_dict)
     return {"message": "User created successfully"}
 
@@ -50,11 +50,11 @@ async def login(user: UserLogin):
     existing_user = await collection.find_one({"email": user.email})
     if not existing_user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
-    
+
     if not verify_password(user.password, existing_user["password"]):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
-    
-    access_token = create_access_token(data={"sub": existing_user["email"]}, 
+
+    access_token = create_access_token(data={"sub": existing_user["email"]},
                                        expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     return {"access_token": access_token, "token_type": "bearer"}
 
@@ -74,7 +74,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
             raise credentials_exception
     except JWTError:
         raise credentials_exception
-    
+
     user = await collection.find_one({"email": email})
     if user is None:
         raise credentials_exception

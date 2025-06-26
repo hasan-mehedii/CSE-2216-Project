@@ -4,7 +4,7 @@ from auth import auth_router  # Import the router that handles /signup and /logi
 from db import client, words_collection  # Ensure your MongoDB collection for words is correctly imported
 from pydantic import BaseModel
 from typing import Dict
-
+from mcq import mcq_router
 # Initialize FastAPI app
 app = FastAPI()
 
@@ -31,6 +31,7 @@ class Word(BaseModel):
     class Config:
         orm_mode = True
 
+app.include_router(mcq_router)
 # Include the auth router for login and signup
 app.include_router(auth_router)
 

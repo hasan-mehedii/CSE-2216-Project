@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../database/models/que_model.dart';
 import '../database/models/que_service.dart';
 import '../database/models/que_card.dart';
 import 'result_screen.dart';
+import 'package:http/http.dart' as http;
 
 class ExamCard {
   final String title;
@@ -30,6 +32,39 @@ class _QuestionScreenState extends State<QuestionScreen> {
   int score = 0;
   int currentDay = 0;
   late Timer timer;
+
+  // Hardcoded language code for testing
+  String languageCode = "english"; // Spanish language code
+  int examNumber = 1; // Testing with Exam 2
+
+  Future<void> fetchExam(String languageCode, int examNumber) async {
+    final response = await http.get(
+      Uri.parse('http://127.0.0.1:8000/mcqs/$languageCode/exam/$examNumber'),
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      List<Question> fetchedQuestions = [];
+
+      // Parse the questions from the API response
+      for (var question in data['questions']) {
+        fetchedQuestions.add(Question(
+          id: question['_id'] ?? '',  // Generate or use a placeholder for id if not provided
+          text: question['question'],  // Question text
+          options: List<String>.from(question['options']),
+          answerIndex: question['answer_index'],  // Correct option index
+        ));
+      }
+
+      // Update the state with the fetched questions
+      setState(() {
+        todaysQuestions = fetchedQuestions;
+      });
+    } else {
+      print('Failed to load exam');
+    }
+  }
+
   Duration remaining = const Duration(minutes: 30);
   Map<int, int> selectedAnswers = {};
   List<Question> todaysQuestions = [];
@@ -48,15 +83,14 @@ class _QuestionScreenState extends State<QuestionScreen> {
     // Quiz initialization will start only after "Start" is pressed
   }
 
-  Future<void> initQuiz() async {
+  Future<void> initQuiz(int examNumber) async {
     final prefs = await SharedPreferences.getInstance();
-    currentDay = prefs.getInt('currentDay') ?? 0;
+    selectedLanguage = prefs.getString('selectedLanguage') ?? "English"; // Get selected language
 
-    final questions = await QuestionService.fetchQuestionsForDay(currentDay + 1);
-    setState(() {
-      todaysQuestions = questions;
-    });
+    // Fetch the exam questions for the selected language and exam number
+    await fetchExam(selectedLanguage.toLowerCase(), examNumber);
 
+    // Start the timer for the quiz
     timer = Timer.periodic(const Duration(seconds: 1), (_) {
       setState(() {
         if (remaining.inSeconds > 0) {
@@ -68,6 +102,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
       });
     });
   }
+
 
   void _submit() async {
     for (int i = 0; i < todaysQuestions.length; i++) {
@@ -107,12 +142,15 @@ class _QuestionScreenState extends State<QuestionScreen> {
     }
   }
 
+
   void _startExam(int examIndex) async {
     if (examCards[examIndex].isUnlocked) {
       setState(() {
         hasStarted = true;
       });
-      await initQuiz();
+
+      // Call initQuiz with the selected exam number
+      await initQuiz(examIndex + 1);  // Exam number starts from 1, so use examIndex + 1
     }
   }
 
