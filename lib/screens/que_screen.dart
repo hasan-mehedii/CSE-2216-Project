@@ -2,16 +2,17 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../database/models/que_model.dart';
-import '../database/models/que_service.dart';
-import '../database/models/que_card.dart';
-import 'result_screen.dart';
 import 'package:http/http.dart' as http;
+import '../database/models/que_model.dart'; // Ensure this model exists and is correct for Question
+import '../database/models/que_card.dart'; // Assuming this is your McqCard widget
+import 'result_screen.dart';
 
 class ExamCard {
   final String title;
   final bool isUnlocked;
-  ExamCard({required this.title, required this.isUnlocked});
+  final int pageNumber; // Added pageNumber to ExamCard
+
+  ExamCard({required this.title, required this.isUnlocked, required this.pageNumber});
 }
 
 class QuestionScreen extends StatefulWidget {
@@ -23,74 +24,95 @@ class QuestionScreen extends StatefulWidget {
 
 class _QuestionScreenState extends State<QuestionScreen> {
   bool hasStarted = false;
-  String selectedLanguage = "English";
-  final List<String> languages = [
-    "English", "French", "Spanish", "Chinese", "Japanese"
-  ];
-
+  String selectedLanguage = "english"; // Default language, will be fetched from prefs
   int currentIndex = 0;
   int score = 0;
-  int currentDay = 0;
+  int currentDay = 0; // Not directly used in this MCQ card logic, but kept for context
   late Timer timer;
-
-  // Hardcoded language code for testing
-  String languageCode = "english"; // Spanish language code
-  int examNumber = 1; // Testing with Exam 2
-
-  Future<void> fetchExam(String languageCode, int examNumber) async {
-    final response = await http.get(
-      Uri.parse('http://127.0.0.1:8000/mcqs/$languageCode/exam/$examNumber'),
-    );
-
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      List<Question> fetchedQuestions = [];
-
-      // Parse the questions from the API response
-      for (var question in data['questions']) {
-        fetchedQuestions.add(Question(
-          id: question['_id'] ?? '',  // Generate or use a placeholder for id if not provided
-          text: question['question'],  // Question text
-          options: List<String>.from(question['options']),
-          answerIndex: question['answer_index'],  // Correct option index
-        ));
-      }
-
-      // Update the state with the fetched questions
-      setState(() {
-        todaysQuestions = fetchedQuestions;
-      });
-    } else {
-      print('Failed to load exam');
-    }
-  }
 
   Duration remaining = const Duration(minutes: 30);
   Map<int, int> selectedAnswers = {};
-  List<Question> todaysQuestions = [];
+  List<Question> todaysQuestions = []; // Questions for the current selected exam card
 
-  // Define the list of exam cards with 2 unlocked and 8 locked
+  // Define the list of exam cards (10 cards for 10 sets of 10 MCQs)
+  // Each card will correspond to a 'page' in the backend pagination.
   List<ExamCard> examCards = List.generate(10, (index) {
     return ExamCard(
-      title: "Exam ${index + 1}",
-      isUnlocked: index < 2, // The first 2 exams are unlocked
+      title: "MCQ Set ${index + 1}", // Titles like "MCQ Set 1", "MCQ Set 2", etc.
+      isUnlocked: true, // All sets are unlocked by default for this example
+      pageNumber: index + 1, // Page number for backend (1 to 10)
     );
   });
 
   @override
   void initState() {
     super.initState();
-    // Quiz initialization will start only after "Start" is pressed
+    _loadSelectedLanguage();
   }
 
-  Future<void> initQuiz(int examNumber) async {
+  Future<void> _loadSelectedLanguage() async {
     final prefs = await SharedPreferences.getInstance();
-    selectedLanguage = prefs.getString('selectedLanguage') ?? "English"; // Get selected language
+    // Assuming 'selectedLanguage' is saved as "English", "Spanish", etc.
+    // Convert to lowercase for the backend API.
+    setState(() {
+      selectedLanguage = (prefs.getString('selectedLanguage') ?? "English").toLowerCase();
+    });
+  }
 
-    // Fetch the exam questions for the selected language and exam number
-    await fetchExam(selectedLanguage.toLowerCase(), examNumber);
+  Future<void> fetchPaginatedMCQs(String languageCode, int page, int limit) async {
+    // You might want to show a loading indicator here
+    setState(() {
+      todaysQuestions.clear(); // Clear previous questions
+      currentIndex = 0; // Reset question index
+      selectedAnswers.clear(); // Clear selected answers
+    });
 
-    // Start the timer for the quiz
+    final url = 'http://127.0.0.1:8000/mcqs/paginated/$languageCode?page=$page&limit=$limit';
+    print('Fetching MCQs from: $url'); // Debugging print
+
+    try {
+      final response = await http.get(Uri.parse(url));
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        List<Question> fetchedQuestions = [];
+        for (var q in data) {
+          fetchedQuestions.add(Question(
+            id: q['_id'] ?? UniqueKey().toString(), // Use _id or generate
+            text: q['question'],
+            options: List<String>.from(q['options']),
+            answerIndex: q['answer_index'],
+          ));
+        }
+        setState(() {
+          todaysQuestions = fetchedQuestions;
+        });
+      } else {
+        print('Failed to load MCQs: ${response.statusCode} - ${response.body}');
+        // Show an error message to the user
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to load MCQs: ${response.body}')),
+        );
+      }
+    } catch (e) {
+      print('Error fetching MCQs: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error connecting to server: $e')),
+      );
+    }
+  }
+
+  void _startExam(int examPageNumber) async {
+    setState(() {
+      hasStarted = true;
+    });
+    // Fetch 10 questions for the selected page
+    await fetchPaginatedMCQs(selectedLanguage, examPageNumber, 10);
+    _startQuizTimer();
+  }
+
+  void _startQuizTimer() {
+    remaining = const Duration(minutes: 30); // Reset timer for each exam
     timer = Timer.periodic(const Duration(seconds: 1), (_) {
       setState(() {
         if (remaining.inSeconds > 0) {
@@ -103,7 +125,6 @@ class _QuestionScreenState extends State<QuestionScreen> {
     });
   }
 
-
   void _submit() async {
     for (int i = 0; i < todaysQuestions.length; i++) {
       if (selectedAnswers[i] == todaysQuestions[i].answerIndex) {
@@ -111,10 +132,11 @@ class _QuestionScreenState extends State<QuestionScreen> {
       }
     }
 
-    final prefs = await SharedPreferences.getInstance();
-    if (score >= 10 && currentDay < 9) {
-      prefs.setInt('currentDay', currentDay + 1);
-    }
+    // You might want to save the score or progress here if needed
+    // final prefs = await SharedPreferences.getInstance();
+    // if (score >= someThreshold && currentDay < 9) {
+    //   prefs.setInt('currentDay', currentDay + 1);
+    // }
 
     Navigator.pushReplacement(
       context,
@@ -122,7 +144,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
         builder: (context) => ResultScreen(
           score: score,
           total: todaysQuestions.length,
-          day: currentDay,
+          day: currentDay, // Consider if 'day' is still relevant here
         ),
       ),
     );
@@ -142,18 +164,6 @@ class _QuestionScreenState extends State<QuestionScreen> {
     }
   }
 
-
-  void _startExam(int examIndex) async {
-    if (examCards[examIndex].isUnlocked) {
-      setState(() {
-        hasStarted = true;
-      });
-
-      // Call initQuiz with the selected exam number
-      await initQuiz(examIndex + 1);  // Exam number starts from 1, so use examIndex + 1
-    }
-  }
-
   @override
   void dispose() {
     if (hasStarted) timer.cancel();
@@ -166,7 +176,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
       // Show the list of exam cards
       return Scaffold(
         appBar: AppBar(
-          title: const Text("Select an Exam"),
+          title: const Text("Select an MCQ Set"),
           centerTitle: true,
           backgroundColor: Colors.blue,
         ),
@@ -175,25 +185,42 @@ class _QuestionScreenState extends State<QuestionScreen> {
           child: Column(
             children: [
               Text(
-                'Choose an exam to start',
+                'Choose an MCQ set to start',
                 style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 30),
               Expanded(
-                child: ListView.builder(
+                child: GridView.builder(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2, // 2 cards per row
+                    crossAxisSpacing: 16.0,
+                    mainAxisSpacing: 16.0,
+                    childAspectRatio: 1.2, // Adjust aspect ratio as needed
+                  ),
                   itemCount: examCards.length,
                   itemBuilder: (context, index) {
                     final examCard = examCards[index];
-                    return Card(
-                      color: examCard.isUnlocked ? Colors.green : Colors.grey,
-                      margin: const EdgeInsets.symmetric(vertical: 8),
-                      child: ListTile(
-                        title: Text(
-                          examCard.title,
-                          style: const TextStyle(color: Colors.white),
+                    return GestureDetector(
+                      onTap: examCard.isUnlocked ? () => _startExam(examCard.pageNumber) : null,
+                      child: Card(
+                        color: examCard.isUnlocked ? Colors.green : Colors.grey[700],
+                        elevation: 5,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                        child: Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                examCard.title,
+                                style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                                textAlign: TextAlign.center,
+                              ),
+                              if (!examCard.isUnlocked)
+                                const Icon(Icons.lock, color: Colors.white70, size: 30),
+                            ],
+                          ),
                         ),
-                        onTap: () => _startExam(index),
                       ),
                     );
                   },
@@ -213,7 +240,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text("MCQ Test - $selectedLanguage"),
+        title: Text("MCQ Test - ${selectedLanguage.toUpperCase()}"),
         leading: const BackButton(),
         actions: [
           Center(
@@ -221,6 +248,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
               padding: const EdgeInsets.all(12),
               child: Text(
                 "${remaining.inHours.toString().padLeft(2, '0')}:${(remaining.inMinutes % 60).toString().padLeft(2, '0')}:${(remaining.inSeconds % 60).toString().padLeft(2, '0')}",
+                style: const TextStyle(fontSize: 16, color: Colors.white), // Added text style
               ),
             ),
           ),

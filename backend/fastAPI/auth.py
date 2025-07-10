@@ -7,16 +7,26 @@ from passlib.context import CryptContext
 from jose import jwt, JWTError
 from datetime import datetime, timedelta
 from fastapi.security import OAuth2PasswordBearer
+import secrets
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 auth_router = APIRouter()
 
 # Password hashing setup
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# JWT settings 
+# JWT settings
 SECRET_KEY = "B24TGRWvKBCIHzHKJdhZocdMKhZO0ovAi0nuydx2PAQ"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+# Email settings (configure with your SMTP service)
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 587
+SMTP_USERNAME = "your-email@gmail.com"  # Replace with your Gmail address
+SMTP_PASSWORD = "your-16-character-app-password"  # Replace with your App Password
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
@@ -31,6 +41,49 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
     expire = datetime.utcnow() + (expires_delta or timedelta(minutes=15))
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+def send_email(to_email: str, temp_password: str):
+    msg = MIMEMultipart()
+    msg['From'] = SMTP_USERNAME
+    msg['To'] = to_email
+    msg['Subject'] = "Password Reset Request"
+
+    body = f"""
+    Your temporary password is: {temp_password}
+    Please use this to log in and update your password in the app settings.
+    """
+    msg.attach(MIMEText(body, 'plain'))
+
+    try:
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.starttls()
+        server.login(SMTP_USERNAME, SMTP_PASSWORD)
+        server.sendmail(SMTP_USERNAME, to_email, msg.as_string())
+        server.quit()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to send email: {str(e)}")
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+@auth_router.post("/forgot-password")
+async def forgot_password(request: ForgotPasswordRequest):
+    existing_user = await collection.find_one({"email": request.email})
+    if not existing_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Email not found")
+
+    # Generate a temporary password
+    temp_password = secrets.token_urlsafe(8)  # Generates a random 8-character password
+    hashed_temp_password = hash_password(temp_password)
+
+    # Update the user's password in the database
+    await collection.update_one(
+        {"email": request.email},
+        {"$set": {"password": hashed_temp_password}}
+    )
+
+    # For testing, return the temporary password instead of sending email
+    return {"message": "Temporary password (for testing)", "temp_password": temp_password}
 
 @auth_router.post("/signup")
 async def signup(user: User):
@@ -58,9 +111,6 @@ async def login(user: UserLogin):
                                        expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     return {"access_token": access_token, "token_type": "bearer"}
 
-# Example of protected route
-from fastapi import Depends
-
 async def get_current_user(token: str = Depends(oauth2_scheme)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -84,10 +134,8 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
 async def protected_route(current_user: dict = Depends(get_current_user)):
     return {"message": f"Hello, {current_user['email']}! You have accessed a protected route."}
 
-# New endpoint for fetching user profile
 @auth_router.get("/user/profile")
 async def get_user_profile(current_user: dict = Depends(get_current_user)):
-    # Exclude sensitive fields like password
     user_profile = {
         "fullName": current_user["fullName"],
         "username": current_user["username"],
@@ -101,7 +149,6 @@ async def get_user_profile(current_user: dict = Depends(get_current_user)):
     }
     return user_profile
 
-# Define Pydantic model for premium update
 class PremiumUpdate(BaseModel):
     is_premium: bool
 

@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/storage_service.dart';
 import '../providers/user_profile_provider.dart';
-import '../screens/que_screen.dart';
+import '../screens/mcq_cards_screen.dart';
 import 'home_screens/dashboard.dart';
 import 'home_screens/live_quiz.dart';
 import 'home_screens/routine.dart';
@@ -11,7 +11,6 @@ import 'home_screens/writing.dart';
 import 'home_screens/settings.dart';
 import 'home_screens/pro.dart';
 import 'home_screens/video_lessons.dart';
-
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -74,6 +73,90 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  ListTile _buildDrawerItem(IconData icon, String label, Widget page) {
+    return ListTile(
+      leading: Icon(icon),
+      title: Text(label),
+      onTap: () async {
+        final token = await StorageService.getToken();
+        if (token == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Please log in first.')),
+          );
+          Navigator.pushReplacementNamed(context, '/login');
+        } else {
+          _navigateTo(page);
+        }
+      },
+    );
+  }
+
+  Widget _buildLanguageCard(String language, String subtitle, int index) {
+    final colors = [Colors.blue, Colors.red, Colors.green, Colors.orange, Colors.purple];
+
+    return Container(
+      width: 160,
+      margin: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: colors[index % colors.length].withOpacity(0.9),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black26,
+            blurRadius: 6,
+            offset: const Offset(2, 4),
+          ),
+        ],
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              height: 8,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.3),
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(16),
+                  topRight: Radius.circular(16),
+                ),
+              ),
+            ),
+          ),
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    language,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 14,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final userProfile = Provider.of<UserProfileProvider>(context).userProfile;
@@ -94,7 +177,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 _buildDrawerItem(Icons.video_library, "Video Lessons", const VideoLessonsPage()),
               _buildDrawerItem(Icons.bar_chart, "Progress", const RoutinePage()),
               _buildDrawerItem(Icons.menu_book, "Vocabulary", const LiveQuizPage()),
-              _buildDrawerItem(Icons.check_circle_outline, "MCQ Test", const QuestionScreen()),
+              _buildDrawerItem(Icons.check_circle_outline, "MCQ Test", const McqCardsScreen()),
               _buildDrawerItem(Icons.edit_note, "Written Test", const WritingTestPage()),
               _buildDrawerItem(Icons.settings, "Settings", const SettingsPage()),
               const Spacer(),
@@ -173,80 +256,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
               ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  ListTile _buildDrawerItem(IconData icon, String label, Widget page) {
-    return ListTile(
-      leading: Icon(icon),
-      title: Text(label),
-      onTap: () => _navigateTo(page),
-    );
-  }
-
-  Widget _buildLanguageCard(String language, String subtitle, int index) {
-    final colors = [Colors.blue, Colors.red, Colors.green, Colors.orange, Colors.purple];
-
-    return Container(
-      width: 160,
-      margin: const EdgeInsets.symmetric(horizontal: 10),
-      decoration: BoxDecoration(
-        color: colors[index % colors.length].withOpacity(0.9),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black26,
-            blurRadius: 6,
-            offset: const Offset(2, 4),
-          ),
-        ],
-      ),
-      child: Stack(
-        children: [
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: Container(
-              height: 8,
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.3),
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(16),
-                  topRight: Radius.circular(16),
-                ),
-              ),
-            ),
-          ),
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    language,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 14,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
             ),
           ),
         ],

@@ -1,5 +1,6 @@
+// database/models/que_model.dart
 class Question {
-  final int id;
+  final String id;
   final String text;
   final List<String> options;
   final int answerIndex;
@@ -11,21 +12,21 @@ class Question {
     required this.answerIndex,
   });
 
-  factory Question.fromMap(Map<String, dynamic> map) {
+  factory Question.fromJson(Map<String, dynamic> json) {
     return Question(
-      id: map['id'],
-      text: map['text'],
-      options: List<String>.from(map['options']),
-      answerIndex: map['answerIndex'],
+      id: json['_id'],
+      text: json['question'],
+      options: List<String>.from(json['options']),
+      answerIndex: json['answer_index'],
     );
   }
 
-  Map<String, dynamic> toMap() {
+  Map<String, dynamic> toJson() {
     return {
-      'id': id,
-      'text': text,
+      '_id': id,
+      'question': text,
       'options': options,
-      'answerIndex': answerIndex,
+      'answer_index': answerIndex,
     };
   }
 }

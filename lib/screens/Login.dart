@@ -5,6 +5,8 @@ import '../services/storage_service.dart';
 import 'SignUp.dart';
 import 'package:provider/provider.dart';
 import '../providers/user_profile_provider.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -16,11 +18,14 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStateMixin {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _forgotEmailController = TextEditingController();
   final _emailFocusNode = FocusNode();
   final _passwordFocusNode = FocusNode();
+  final _forgotEmailFocusNode = FocusNode();
 
   bool _obscureText = true;
   final _formKey = GlobalKey<FormState>();
+  final _forgotFormKey = GlobalKey<FormState>();
 
   late AnimationController _controller;
   late Animation<double> _animation;
@@ -43,12 +48,13 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     _controller.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    _forgotEmailController.dispose();
     _emailFocusNode.dispose();
     _passwordFocusNode.dispose();
+    _forgotEmailFocusNode.dispose();
     super.dispose();
   }
 
-  // Update the email validation regex
   String? _validateEmail(String? mail) {
     if (mail == null || mail.isEmpty) return 'Please enter your email';
     final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[a-zA-Z]{2,7}$');
@@ -62,7 +68,6 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     return null;
   }
 
-  // fastapi login function
   Future<void> _login() async {
     if (_formKey.currentState?.validate() ?? false) {
       try {
@@ -71,12 +76,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
           _emailController.text.trim(),
           _passwordController.text,
         );
-        // Save token and profile
         await StorageService.saveToken(result['token']);
         await StorageService.saveUserProfile(result['profile']);
         Provider.of<UserProfileProvider>(context, listen: false)
             .setUserProfile(result['profile']);
-        // Navigate to HomeScreen
         Navigator.pushReplacementNamed(context, '/home');
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -86,6 +89,96 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     }
   }
 
+  Future<void> _forgotPassword() async {
+    if (_forgotFormKey.currentState?.validate() ?? false) {
+      try {
+        final response = await http.post(
+          Uri.parse('http://127.0.0.1:8000/forgot-password'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'email': _forgotEmailController.text.trim()}),
+        );
+
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          String tempPassword = data['temp_password'];
+
+          // Show dialog with temporary password for 1 minute
+          showDialog(
+            context: context,
+            barrierDismissible: false, // Prevent closing by tapping outside
+            builder: (context) => AlertDialog(
+              title: const Text('Temporary Password'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SelectableText(
+                    'Your temporary password is: $tempPassword',
+                    style: const TextStyle(fontSize: 16),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text('This dialog will close in 1 minute. Select and copy the password.'),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Close Now'),
+                ),
+              ],
+            ),
+          ).then((_) {
+            // Do nothing after dialog is closed
+          });
+
+          // Automatically close the dialog after 1 minute
+          Future.delayed(const Duration(minutes: 1), () {
+            if (mounted) {
+              Navigator.of(context, rootNavigator: true).pop();
+            }
+          });
+        } else {
+          throw Exception(jsonDecode(response.body)['detail'] ?? 'Failed to send password reset email');
+        }
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
+      }
+    }
+  }
+
+  void _showForgotPasswordDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Forgot Password'),
+        content: Form(
+          key: _forgotFormKey,
+          child: TextFormField(
+            controller: _forgotEmailController,
+            focusNode: _forgotEmailFocusNode,
+            decoration: const InputDecoration(
+              labelText: 'Email',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.email),
+            ),
+            keyboardType: TextInputType.emailAddress,
+            validator: _validateEmail,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: _forgotPassword,
+            child: const Text('Submit'),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -145,7 +238,18 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                           validator: _validatePassword,
                           focusNode: _passwordFocusNode,
                         ),
-                        const SizedBox(height: 30),
+                        const SizedBox(height: 10),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton(
+                            onPressed: _showForgotPasswordDialog,
+                            child: const Text(
+                              'Forgot Password?',
+                              style: TextStyle(color: Colors.blueAccent),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
